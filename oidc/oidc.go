@@ -2,6 +2,7 @@ package oidcverify
 
 import (
 	"context"
+	"fmt"
 	"github.com/bufbuild/connect-go"
 	"github.com/hadrienk/connect-go-interceptors/common"
 	"net/http"
@@ -9,16 +10,46 @@ import (
 )
 import "github.com/coreos/go-oidc/v3/oidc"
 
-func NewOIDCInterceptor(verifier *oidc.IDTokenVerifier, handler func(token *oidc.IDToken) error) connect.Interceptor {
+type option func(token *oidc.IDToken) error
+
+// Validate that the given role is present in the claims of the oidc.IDToken.
+func WithRole(role string) option {
+	return WithHandler(func(token *oidc.IDToken) error {
+		var claims struct {
+			Roles []string `json:"roles"`
+		}
+		if err := token.Claims(&claims); err != nil {
+			return err
+		}
+		for _, r := range claims.Roles {
+			if strings.TrimSpace(r) == strings.TrimSpace(role) {
+				return nil
+			}
+		}
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("missing role %s", role))
+	})
+}
+
+// Add a custom handler that gets called with the validated oidc.IDToken
+func WithHandler(handler func(token *oidc.IDToken) error) option {
+	return option(handler)
+}
+
+func NewOIDCInterceptor(verifier *oidc.IDTokenVerifier, options ...option) connect.Interceptor {
 	return common.ContextHeaderInterceptor(func(ctx context.Context, header http.Header) (context.Context, error) {
 		rawToken := header.Get("Authorization")
 		rawToken = strings.TrimPrefix(rawToken, "Bearer")
 		rawToken = strings.TrimSpace(rawToken)
-
 		idToken, err := verifier.Verify(ctx, rawToken)
 		if err != nil {
-			return ctx, err
+			return ctx, connect.NewError(connect.CodeUnauthenticated, err)
 		}
-		return ctx, handler(idToken)
+		for _, option := range options {
+			err := option(idToken)
+			if err != nil {
+				return ctx, err
+			}
+		}
+		return ctx, nil
 	})
 }

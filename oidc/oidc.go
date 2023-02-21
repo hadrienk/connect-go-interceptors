@@ -19,7 +19,7 @@ func WithRole(role string) option {
 			Roles []string `json:"roles"`
 		}
 		if err := token.Claims(&claims); err != nil {
-			return err
+			return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("no roles claim", err))
 		}
 		for _, r := range claims.Roles {
 			if strings.TrimSpace(r) == strings.TrimSpace(role) {

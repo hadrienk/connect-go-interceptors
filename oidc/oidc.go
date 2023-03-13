@@ -12,6 +12,16 @@ import "github.com/coreos/go-oidc/v3/oidc"
 
 type option func(token *oidc.IDToken) error
 
+type oidcTokenKey struct{}
+
+func GetToken(ctx context.Context) (*oidc.IDToken, bool) {
+	value := ctx.Value(oidcTokenKey{})
+	if idToken, ok := value.(*oidc.IDToken); ok {
+		return idToken, true
+	}
+	return nil, false
+}
+
 // Validate that the given role is present in the claims of the oidc.IDToken.
 func WithRole(role string) option {
 	return WithHandler(func(token *oidc.IDToken) error {
@@ -50,6 +60,6 @@ func NewOIDCInterceptor(verifier *oidc.IDTokenVerifier, options ...option) conne
 				return ctx, err
 			}
 		}
-		return ctx, nil
+		return context.WithValue(ctx, oidcTokenKey{}, idToken), nil
 	})
 }
